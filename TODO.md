@@ -1,0 +1,4 @@
+- [ ] Regenerate Convex client bindings for frontend
+- [ ] Verify generated API exposes `api.functions.listCategories`
+- [ ] Run frontend type-check
+- [ ] Apply config/path alignment fix if generation is still empty
