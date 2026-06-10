@@ -3,17 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "ts-node src/runner.ts",
-    "load-test": "TOTAL=1000 CONCURRENT=50 ts-node src/runner.ts",
-    "build": "tsc"
+    "start": "node dist/runner.js",
+    "build": "tsc",
+    "dev": "ts-node src/runner.ts",
+    "load-test": "TOTAL=1000 CONCURRENT=50 ts-node src/runner.ts"
   },
   "dependencies": {
     "axios": "^1.7.2",
     "convex": "^1.12.0",
     "typescript": "^5.5.3",
-    "ts-node": "^10.9.2"
-  },
-  "devDependencies": {
+    "ts-node": "^10.9.2",
     "@types/node": "^20.14.9"
   }
 }
