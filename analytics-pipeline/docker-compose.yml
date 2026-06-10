@@ -14,77 +14,34 @@ services:
       - "5435:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
     networks:
       - analytics-net
 
-  # Kafka in KRaft Mode (Self-Managed Cluster - No Zookeeper needed!)
-  kafka:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: analytics-kafka
+  # Event Collector (writes directly to PostgreSQL)
+  collector:
+    build: .
+    container_name: analytics-collector
+    restart: always
     ports:
-      - "9092:9092"
+      - "5001:5001"
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
-      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
-      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      DATABASE_URL: postgresql://analytics_user:analytics_password@postgres:5432/analytics_warehouse
+      PORT: 5001
+    depends_on:
+      - postgres
     networks:
       - analytics-net
 
-  # Metabase Business Intelligence Tool
+  # Metabase Business Intelligence Dashboard
   metabase:
     image: metabase/metabase:latest
     container_name: analytics-metabase
     restart: always
     ports:
       - "3030:3000"
-    environment:
-      MB_DB_TYPE: h2
     volumes:
       - metabase-data:/metabase-data
     depends_on:
-      - postgres
-    networks:
-      - analytics-net
-
-  # Event Collector Container
-  collector:
-    build: .
-    container_name: analytics-collector
-    restart: always
-    command: node collector.js
-    ports:
-      - "5001:5001"
-    environment:
-      KAFKA_BROKER: kafka:29092
-      PORT: 5001
-    depends_on:
-      - kafka
-    networks:
-      - analytics-net
-
-  # Stream Processor Container
-  processor:
-    build: .
-    container_name: analytics-processor
-    restart: always
-    command: node processor.js
-    environment:
-      KAFKA_BROKER: kafka:29092
-      DATABASE_URL: postgresql://analytics_user:analytics_password@postgres:5432/analytics_warehouse
-    depends_on:
-      - kafka
       - postgres
     networks:
       - analytics-net

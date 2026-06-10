@@ -26,12 +26,13 @@ import axios from 'axios';
 import * as crypto from 'crypto';
 
 // ── Config ────────────────────────────────────────────────────
-const CONVEX_URL   = process.env.CONVEX_URL   ?? 'http://localhost:3000';
-const TOTAL_BOTS   = parseInt(process.env.TOTAL      ?? '100');
-const CONCURRENT   = parseInt(process.env.CONCURRENT ?? '20');
-const DELAY_MS     = parseInt(process.env.DELAY_MS   ?? '800');
-const API_BASE     = process.env.API_URL ?? 'http://localhost:3000';
-const DAEMON       = process.env.DAEMON === 'true';
+const CONVEX_URL     = process.env.CONVEX_URL     ?? 'http://localhost:3000';
+const COLLECTOR_URL  = process.env.COLLECTOR_URL  ?? 'http://localhost:5001';
+const TOTAL_BOTS     = parseInt(process.env.TOTAL      ?? '100');
+const CONCURRENT     = parseInt(process.env.CONCURRENT ?? '20');
+const DELAY_MS       = parseInt(process.env.DELAY_MS   ?? '800');
+const API_BASE       = process.env.API_URL ?? 'http://localhost:3000';
+const DAEMON         = process.env.DAEMON === 'true';
 
 // ── Types ─────────────────────────────────────────────────────
 type Persona =
@@ -318,17 +319,17 @@ class AuroraMartBot {
       ...extra,
     };
 
-    // 1. Write to Convex (main application db)
+    // 1. Write to Convex (main application database)
     await convexMutation('functions:trackEvent', payload);
 
-    // 2. Dual-Write to the local analytics pipeline event-collector (Kafka)
+    // 2. Send to Analytics Collector (direct-to-PostgreSQL pipeline)
     try {
-      await axios.post('http://localhost:5001/events', payload, {
+      await axios.post(`${COLLECTOR_URL}/events`, payload, {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 2000, // Fail-fast so bot run isn't blocked if pipeline is down
+        timeout: 3000, // Fail-fast so bot run is never blocked
       });
     } catch {
-      // Silently ignore if pipeline is not running
+      // Silently ignore if collector is not reachable
     }
   }
 }
