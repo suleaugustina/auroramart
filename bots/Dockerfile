@@ -2,12 +2,15 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy and install dependencies
+# Copy and install ALL dependencies (including devDependencies for build)
 COPY package*.json ./
 RUN npm install
 
 # Copy source files
 COPY . .
 
-# Start the bot simulator in daemon mode
-CMD ["npx", "ts-node", "src/runner.ts"]
+# Compile TypeScript to JavaScript (outputs to ./dist per tsconfig.json)
+RUN npx tsc
+
+# Start the compiled bot simulator
+CMD ["node", "dist/runner.js"]
