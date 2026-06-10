@@ -7,9 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Copy source and compile TypeScript
+# Copy source and compile TypeScript using local tsc (not npx)
 COPY . .
-RUN npx tsc
+RUN npm run build
 
 # ── Stage 2: Run ────────────────────────────────────────────────
 FROM node:18-alpine
