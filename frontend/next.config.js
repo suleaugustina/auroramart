@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Keep pg and native node modules server-side only
+  serverExternalPackages: ['pg', 'pg-native'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.convex.cloud' },
