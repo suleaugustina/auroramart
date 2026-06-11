@@ -33,7 +33,7 @@ async function initSchema() {
     const { rows } = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'raw_events'
+        WHERE table_schema = 'public' AND table_name = 'store_events'
       );
     `);
 
@@ -99,7 +99,7 @@ app.post('/events', async (req, res) => {
   try {
     // ── 1. Write raw event ──────────────────────────────────────
     await client.query(`
-      INSERT INTO raw_events (
+      INSERT INTO store_events (
         event_id, event_type, session_id, user_id, product_id,
         product_name, product_price, category, order_id, revenue,
         quantity, payment_method, device, city, country,

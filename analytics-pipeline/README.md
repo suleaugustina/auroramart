@@ -58,7 +58,7 @@ The local setup package builds all services inside a single Docker Compose netwo
 
 5. **Create Real-Time Visualizations in Metabase:**
    * In Metabase, click **New** -> **Question** -> **Native query** (SQL).
-   * Run a simple select to verify data is arriving: `SELECT * FROM raw_events LIMIT 10;`.
+   * Run a simple select to verify data is arriving: `SELECT * FROM store_events LIMIT 10;`.
    * Create questions using our pre-built high-performance database views:
      * **Live Revenue Counter:** `SELECT total_revenue FROM view_realtime_sales;` (Use the **Number** visualization, set auto-refresh to 1-second).
      * **Top Products sold:** `SELECT product_name, total_purchased, total_revenue FROM view_product_performance;` (Use a **Bar chart**).
@@ -155,7 +155,7 @@ If you want to clear your analytics dashboard and start with clean data, you can
    If you want to clear the transaction history but keep your Metabase charts, tables, and connection:
    Connect to PostgreSQL (using Docker cli or Metabase query editor) and run:
    ```sql
-   TRUNCATE TABLE raw_events RESTART IDENTITY CASCADE;
+   TRUNCATE TABLE store_events RESTART IDENTITY CASCADE;
    TRUNCATE TABLE fraud_alerts RESTART IDENTITY CASCADE;
    ```
    *This immediately wipes all transaction logs and fraud alerts, resetting your charts to 0. You can now re-run the Bot Simulator to populate fresh analytics.*
