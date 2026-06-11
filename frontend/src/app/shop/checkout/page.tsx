@@ -28,7 +28,7 @@ type FormData = z.infer<typeof schema>;
 
 export default function CheckoutPage() {
   const router  = useRouter();
-  const { cart, subtotal, reset } = useCartStore();
+  const { cart, subtotal } = useCartStore();
   const { convexUserId, user }    = useAuthStore();
   const [step, setStep]           = useState(1);
   const [address, setAddress]     = useState<FormData | null>(null);

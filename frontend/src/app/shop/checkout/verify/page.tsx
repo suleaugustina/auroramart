@@ -13,7 +13,7 @@ export default function PaymentVerifyPage() {
   const searchParams = useSearchParams();
   const [state, setState] = useState<State>('loading');
   const [order, setOrder] = useState<any>(null);
-  const { reset } = useCartStore();
+  const { setCart } = useCartStore();
 
   useEffect(() => {
     const ref = searchParams.get('reference') || searchParams.get('trxref');
@@ -23,10 +23,10 @@ export default function PaymentVerifyPage() {
       .then((res) => {
         setOrder(res.data.order ?? res.data);
         setState('success');
-        reset();
+        setCart(null);
       })
       .catch(() => setState('failed'));
-  }, [searchParams, reset]);
+  }, [searchParams, setCart]);
 
   return (
     <div className="min-h-screen bg-paper flex items-center justify-center px-4">
