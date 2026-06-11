@@ -1,7 +1,7 @@
 -- Schema for AuroraMart Real-Time Analytics
 
 -- Raw events table
-CREATE TABLE IF NOT EXISTS store_events (
+CREATE TABLE IF NOT EXISTS aurora_analytics_events (
     id SERIAL PRIMARY KEY,
     event_id VARCHAR(64) UNIQUE,
     event_type VARCHAR(50) NOT NULL,
@@ -37,9 +37,9 @@ CREATE TABLE IF NOT EXISTS fraud_alerts (
 );
 
 -- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_store_events_type ON store_events(event_type);
-CREATE INDEX IF NOT EXISTS idx_store_events_session ON store_events(session_id);
-CREATE INDEX IF NOT EXISTS idx_store_events_created_at ON store_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_aurora_events_type ON aurora_analytics_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_aurora_events_session ON aurora_analytics_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_aurora_events_created_at ON aurora_analytics_events(created_at);
 
 -- ── PostgreSQL Views for Real-Time BI ──────────────────────────
 
@@ -51,7 +51,7 @@ SELECT
     COALESCE(SUM(CASE WHEN event_type = 'order.paid' THEN revenue END), 0) as total_revenue,
     COUNT(CASE WHEN event_type = 'payment.failed' THEN 1 END) as total_payment_failures,
     COUNT(CASE WHEN event_type = 'cart.abandoned' THEN 1 END) as total_cart_abandonments
-FROM store_events;
+FROM aurora_analytics_events;
 
 -- 2. Hourly Sales Trend
 CREATE OR REPLACE VIEW view_hourly_sales AS
@@ -60,7 +60,7 @@ SELECT
     COUNT(CASE WHEN event_type = 'order.placed' THEN 1 END) as orders_placed,
     COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END) as orders_paid,
     COALESCE(SUM(CASE WHEN event_type = 'order.paid' THEN revenue END), 0) as revenue
-FROM store_events
+FROM aurora_analytics_events
 GROUP BY sales_hour
 ORDER BY sales_hour DESC;
 
@@ -72,7 +72,7 @@ SELECT
     COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END) as orders_paid,
     COALESCE(SUM(CASE WHEN event_type = 'order.paid' THEN revenue END), 0) as revenue,
     COUNT(DISTINCT session_id) as total_sessions
-FROM store_events
+FROM aurora_analytics_events
 WHERE city IS NOT NULL AND city != ''
 GROUP BY city
 ORDER BY revenue DESC;
@@ -88,7 +88,7 @@ SELECT
     COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END) as total_purchased,
     COALESCE(SUM(CASE WHEN event_type = 'cart.item_added' THEN quantity END), 0) as total_quantity_added,
     COALESCE(SUM(CASE WHEN event_type = 'order.paid' THEN revenue END), 0) as total_revenue
-FROM store_events
+FROM aurora_analytics_events
 WHERE product_id IS NOT NULL
 GROUP BY product_id, product_name, category
 ORDER BY total_revenue DESC, total_views DESC;
@@ -98,27 +98,27 @@ CREATE OR REPLACE VIEW view_conversion_funnel AS
 SELECT
     '1. Product Viewed' as step,
     COUNT(DISTINCT session_id) as unique_sessions
-FROM store_events WHERE event_type = 'product.viewed'
+FROM aurora_analytics_events WHERE event_type = 'product.viewed'
 UNION ALL
 SELECT
     '2. Added to Cart' as step,
     COUNT(DISTINCT session_id) as unique_sessions
-FROM store_events WHERE event_type = 'cart.item_added'
+FROM aurora_analytics_events WHERE event_type = 'cart.item_added'
 UNION ALL
 SELECT
     '3. Checkout Started' as step,
     COUNT(DISTINCT session_id) as unique_sessions
-FROM store_events WHERE event_type = 'checkout.started'
+FROM aurora_analytics_events WHERE event_type = 'checkout.started'
 UNION ALL
 SELECT
     '4. Order Placed' as step,
     COUNT(DISTINCT session_id) as unique_sessions
-FROM store_events WHERE event_type = 'order.placed'
+FROM aurora_analytics_events WHERE event_type = 'order.placed'
 UNION ALL
 SELECT
     '5. Order Paid' as step,
     COUNT(DISTINCT session_id) as unique_sessions
-FROM store_events WHERE event_type = 'order.paid';
+FROM aurora_analytics_events WHERE event_type = 'order.paid';
 
 -- 6. Bot Persona Metrics
 CREATE OR REPLACE VIEW view_persona_metrics AS
@@ -139,7 +139,7 @@ SELECT
             ROUND(SUM(CASE WHEN event_type = 'order.paid' THEN revenue END) / COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END), 2)
         ELSE 0 
     END as average_order_value
-FROM store_events
+FROM aurora_analytics_events
 WHERE is_bot_generated = TRUE AND bot_persona IS NOT NULL
 GROUP BY bot_persona
 ORDER BY total_revenue DESC;
@@ -150,7 +150,7 @@ SELECT
     device,
     COUNT(DISTINCT session_id) as sessions,
     COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END) as sales
-FROM store_events
+FROM aurora_analytics_events
 WHERE device IS NOT NULL
 GROUP BY device;
 
@@ -163,6 +163,6 @@ SELECT
     COUNT(CASE WHEN event_type = 'payment.failed' THEN 1 END) as failed_payments,
     ROUND((COUNT(CASE WHEN event_type = 'order.paid' THEN 1 END)::NUMERIC / COUNT(*)::NUMERIC) * 100, 2) as success_rate_percent
 FROM (
-    SELECT payment_method, event_type FROM store_events WHERE event_type IN ('order.paid', 'payment.failed') AND payment_method IS NOT NULL
+    SELECT payment_method, event_type FROM aurora_analytics_events WHERE event_type IN ('order.paid', 'payment.failed') AND payment_method IS NOT NULL
 ) sub
 GROUP BY payment_method;
