@@ -61,14 +61,33 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = __importDefault(require("axios"));
 const crypto = __importStar(require("crypto"));
+const browser_1 = require("convex/browser");
+const dotenv = __importStar(require("dotenv"));
+const path = __importStar(require("path"));
+// Load env — tries .env.local at workspace root (local dev), then .env in same dir.
+// On Railway/Docker, CONVEX_URL is injected directly — these are no-ops there.
+const envPaths = [
+    path.join(__dirname, '../../.env.local'), // local: bots/dist/ -> workspace root
+    path.join(__dirname, '../.env.local'), // fallback
+    path.join(__dirname, '../../.env'),
+    path.join(__dirname, '../.env'),
+    path.join(__dirname, '.env'),
+];
+for (const envPath of envPaths) {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error)
+        break; // stop at first found file
+}
 // ── Config ────────────────────────────────────────────────────
 const CONVEX_URL = process.env.CONVEX_URL ?? 'http://localhost:3000';
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://localhost:5001';
 const TOTAL_BOTS = parseInt(process.env.TOTAL ?? '100');
-const CONCURRENT = parseInt(process.env.CONCURRENT ?? '20');
+const CONCURRENT = parseInt(process.env.CONCURRENT ?? '5'); // keep low to avoid Convex OCC conflicts
 const DELAY_MS = parseInt(process.env.DELAY_MS ?? '800');
-const API_BASE = process.env.API_URL ?? 'http://localhost:3000';
+const STAGGER_MS = parseInt(process.env.STAGGER_MS ?? '300'); // ms between bot starts within a batch
+const API_BASE = process.env.API_URL ?? process.env.CONVEX_URL ?? 'http://localhost:3000';
 const DAEMON = process.env.DAEMON === 'true';
+const client = new browser_1.ConvexHttpClient(CONVEX_URL);
 // ── Persona Profiles ──────────────────────────────────────────
 const PERSONAS = {
     impulse_buyer: { purchaseProb: 0.78, avgProductsViewed: 3, preferredCategories: ['fashion-clothing', 'electronics-gadgets'], priceRange: [2000, 80000], avgQty: [1, 2], description: 'Buys quickly, minimal research' },
@@ -94,30 +113,43 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (base) => base * (0.5 + Math.random());
-// ── Convex HTTP API caller ────────────────────────────────────
-async function convexMutation(fn, args) {
-    try {
-        const res = await axios_1.default.post(`${CONVEX_URL}/api/mutation`, { path: fn, args }, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 15000,
-        });
-        return res.data.value;
+// ── Convex HTTP API caller (with retry + exponential backoff) ──
+async function convexMutation(fn, args, retries = 4) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await client.mutation(fn, args);
+        }
+        catch (e) {
+            const isOCC = e?.message?.includes('OCC') || e?.message?.includes('optimistic concurrency');
+            const isRetryable = isOCC || e?.message?.includes('rate limit') || e?.message?.includes('throttl');
+            if (attempt < retries && isRetryable) {
+                const backoff = 200 * Math.pow(2, attempt) + Math.random() * 100;
+                await sleep(backoff);
+                continue;
+            }
+            // Non-retryable or exhausted — log and return null
+            if (!isOCC)
+                console.error(`Mutation ${fn} failed:`, e instanceof Error ? e.message : e);
+            return null;
+        }
     }
-    catch {
-        return null;
-    }
+    return null;
 }
-async function convexQuery(fn, args) {
-    try {
-        const res = await axios_1.default.post(`${CONVEX_URL}/api/query`, { path: fn, args }, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 15000,
-        });
-        return res.data.value;
+async function convexQuery(fn, args, retries = 3) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await client.query(fn, args);
+        }
+        catch (e) {
+            if (attempt < retries) {
+                await sleep(150 * Math.pow(2, attempt));
+                continue;
+            }
+            console.error(`Query ${fn} failed:`, e instanceof Error ? e.message : e);
+            return null;
+        }
     }
-    catch {
-        return null;
-    }
+    return null;
 }
 // ── Bot Class ─────────────────────────────────────────────────
 class AuroraMartBot {
@@ -141,8 +173,11 @@ class AuroraMartBot {
         this.firstName = pick(FIRST_NAMES);
         this.lastName = pick(LAST_NAMES);
     }
-    async run() {
+    async run(staggerMs = 0) {
         try {
+            // Stagger start within a batch to reduce write contention
+            if (staggerMs > 0)
+                await sleep(staggerMs);
             await this.track('bot.session_start');
             await this.createUser();
             await sleep(jitter(DELAY_MS));
@@ -153,7 +188,7 @@ class AuroraMartBot {
                 await sleep(jitter(DELAY_MS * 1.5));
                 await this.checkout();
             }
-            await this.track('bot.session_end', { stats: this.stats });
+            await this.track('bot.session_end', { metadata: { stats: this.stats } });
         }
         catch {
             this.stats.errors++;
@@ -337,12 +372,12 @@ async function run() {
             const n = Math.floor(i / CONCURRENT) + 1;
             const total = Math.ceil(bots.length / CONCURRENT);
             process.stdout.write(`  Batch ${n}/${total} (${batch.length} bots)… `);
-            const settled = await Promise.allSettled(batch.map((b) => b.run()));
+            const settled = await Promise.allSettled(batch.map((b, idx) => b.run(idx * STAGGER_MS)));
             settled.forEach((r) => { if (r.status === 'fulfilled')
                 allResults.push(r.value); });
             console.log(`done (${Date.now() - start}ms elapsed)`);
             if (i + CONCURRENT < bots.length)
-                await sleep(1500);
+                await sleep(2000);
         }
         // Summary
         const purchases = allResults.reduce((s, r) => s + r.purchases, 0);

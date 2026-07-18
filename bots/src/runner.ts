@@ -24,15 +24,35 @@
 
 import axios from 'axios';
 import * as crypto from 'crypto';
+import { ConvexHttpClient } from "convex/browser";
+import * as dotenv from "dotenv";
+import * as path from "path";
+
+// Load env — tries .env.local at workspace root (local dev), then .env in same dir.
+// On Railway/Docker, CONVEX_URL is injected directly — these are no-ops there.
+const envPaths = [
+  path.join(__dirname, '../../.env.local'), // local: bots/dist/ -> workspace root
+  path.join(__dirname, '../.env.local'),    // fallback
+  path.join(__dirname, '../../.env'),
+  path.join(__dirname, '../.env'),
+  path.join(__dirname, '.env'),
+];
+for (const envPath of envPaths) {
+  const result = dotenv.config({ path: envPath });
+  if (!result.error) break; // stop at first found file
+}
 
 // ── Config ────────────────────────────────────────────────────
 const CONVEX_URL     = process.env.CONVEX_URL     ?? 'http://localhost:3000';
 const COLLECTOR_URL  = process.env.COLLECTOR_URL  ?? 'http://localhost:5001';
 const TOTAL_BOTS     = parseInt(process.env.TOTAL      ?? '100');
-const CONCURRENT     = parseInt(process.env.CONCURRENT ?? '20');
+const CONCURRENT     = parseInt(process.env.CONCURRENT ?? '5');   // keep low to avoid Convex OCC conflicts
 const DELAY_MS       = parseInt(process.env.DELAY_MS   ?? '800');
-const API_BASE       = process.env.API_URL ?? 'http://localhost:3000';
+const STAGGER_MS     = parseInt(process.env.STAGGER_MS ?? '300'); // ms between bot starts within a batch
+const API_BASE       = process.env.API_URL ?? process.env.CONVEX_URL ?? 'http://localhost:3000';
 const DAEMON         = process.env.DAEMON === 'true';
+
+const client = new ConvexHttpClient(CONVEX_URL);
 
 // ── Types ─────────────────────────────────────────────────────
 type Persona =
@@ -87,29 +107,41 @@ const rand    = (min: number, max: number) => Math.floor(Math.random() * (max - 
 const sleep   = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const jitter  = (base: number) => base * (0.5 + Math.random());
 
-// ── Convex HTTP API caller ────────────────────────────────────
-async function convexMutation(fn: string, args: Record<string, any>): Promise<any> {
-  try {
-    const res = await axios.post(`${CONVEX_URL}/api/mutation`, { path: fn, args }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 15000,
-    });
-    return res.data.value;
-  } catch {
-    return null;
+// ── Convex HTTP API caller (with retry + exponential backoff) ──
+async function convexMutation(fn: string, args: Record<string, any>, retries = 4): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await client.mutation(fn as any, args);
+    } catch (e: any) {
+      const isOCC = e?.message?.includes('OCC') || e?.message?.includes('optimistic concurrency');
+      const isRetryable = isOCC || e?.message?.includes('rate limit') || e?.message?.includes('throttl');
+      if (attempt < retries && isRetryable) {
+        const backoff = 200 * Math.pow(2, attempt) + Math.random() * 100;
+        await sleep(backoff);
+        continue;
+      }
+      // Non-retryable or exhausted — log and return null
+      if (!isOCC) console.error(`Mutation ${fn} failed:`, e instanceof Error ? e.message : e);
+      return null;
+    }
   }
+  return null;
 }
 
-async function convexQuery(fn: string, args: Record<string, any>): Promise<any> {
-  try {
-    const res = await axios.post(`${CONVEX_URL}/api/query`, { path: fn, args }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 15000,
-    });
-    return res.data.value;
-  } catch {
-    return null;
+async function convexQuery(fn: string, args: Record<string, any>, retries = 3): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await client.query(fn as any, args);
+    } catch (e: any) {
+      if (attempt < retries) {
+        await sleep(150 * Math.pow(2, attempt));
+        continue;
+      }
+      console.error(`Query ${fn} failed:`, e instanceof Error ? e.message : e);
+      return null;
+    }
   }
+  return null;
 }
 
 // ── Bot Class ─────────────────────────────────────────────────
@@ -136,8 +168,11 @@ class AuroraMartBot {
     this.lastName  = pick(LAST_NAMES);
   }
 
-  async run(): Promise<BotStats> {
+  async run(staggerMs = 0): Promise<BotStats> {
     try {
+      // Stagger start within a batch to reduce write contention
+      if (staggerMs > 0) await sleep(staggerMs);
+
       await this.track('bot.session_start');
       await this.createUser();
       await sleep(jitter(DELAY_MS));
@@ -151,7 +186,7 @@ class AuroraMartBot {
         await this.checkout();
       }
 
-      await this.track('bot.session_end', { stats: this.stats });
+      await this.track('bot.session_end', { metadata: { stats: this.stats } });
     } catch {
       this.stats.errors++;
     }
@@ -361,12 +396,14 @@ async function run() {
       const total = Math.ceil(bots.length / CONCURRENT);
       process.stdout.write(`  Batch ${n}/${total} (${batch.length} bots)… `);
 
-      const settled = await Promise.allSettled(batch.map((b) => b.run()));
+      const settled = await Promise.allSettled(
+        batch.map((b, idx) => b.run(idx * STAGGER_MS))
+      );
       settled.forEach((r) => { if (r.status === 'fulfilled') allResults.push(r.value); });
 
       console.log(`done (${Date.now() - start}ms elapsed)`);
 
-      if (i + CONCURRENT < bots.length) await sleep(1500);
+      if (i + CONCURRENT < bots.length) await sleep(2000);
     }
 
     // Summary
