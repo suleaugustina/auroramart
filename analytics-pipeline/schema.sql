@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS aurora_analytics_events (
     bot_persona VARCHAR(50),
     is_bot_generated BOOLEAN DEFAULT FALSE,
     reason VARCHAR(255), -- For cart abandonment / payment failure
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Fraud alerts table (real-time stream anomalies)
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS fraud_alerts (
     severity VARCHAR(20) NOT NULL, -- 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
     description TEXT NOT NULL,
     metadata JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for performance
