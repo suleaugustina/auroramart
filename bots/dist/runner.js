@@ -80,7 +80,11 @@ for (const envPath of envPaths) {
 }
 // ── Config ────────────────────────────────────────────────────
 const rawConvexUrl = process.env.CONVEX_URL ?? 'http://localhost:3000';
-const CONVEX_URL = rawConvexUrl.endsWith('/') ? rawConvexUrl.slice(0, -1) : rawConvexUrl;
+// Strip trailing slash, then normalise .convex.site -> .convex.cloud
+// (.site is the HTTP Actions domain; .cloud is the deployment URL for client queries/mutations)
+const CONVEX_URL = rawConvexUrl
+    .replace(/\/$/, '') // remove trailing slash
+    .replace(/\.convex\.site$/, '.convex.cloud'); // fix common Railway env var mistake
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://localhost:5001';
 const TOTAL_BOTS = parseInt(process.env.TOTAL ?? '100');
 const CONCURRENT = parseInt(process.env.CONCURRENT ?? '5'); // keep low to avoid Convex OCC conflicts
