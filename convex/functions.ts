@@ -158,31 +158,42 @@ export const trackEvent = mutation({
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now();
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayMs = todayStart.getTime();
 
-    const allEvents = await ctx.db.query("analyticsEvents").collect();
-    const todayEvents = allEvents.filter((e) => e._creationTime >= todayMs && !e.isBotGenerated);
+    // ── Real user events (today only) – use indexed queries per event type
+    // to avoid a full-table .collect() that can exceed Convex's 4MB read cap.
+    const realEventTypes = ["order.paid", "order.placed", "user.registered", "product.viewed", "cart.item_added", "checkout.started"];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const todayRealEvents: any[] = [];
 
-    const todayRevenue = todayEvents
+    for (const type of realEventTypes) {
+      const events = await ctx.db
+        .query("analyticsEvents")
+        .withIndex("by_bot_and_type", (q) => q.eq("isBotGenerated", false).eq("eventType", type))
+        .filter((q) => q.gte(q.field("_creationTime"), todayMs))
+        .take(500);
+      todayRealEvents.push(...events);
+    }
+
+    const todayRevenue = todayRealEvents
       .filter((e) => e.eventType === "order.paid")
       .reduce((sum, e) => sum + (e.revenue ?? 0), 0);
 
-    const todayOrders = todayEvents.filter((e) => e.eventType === "order.placed").length;
-    const todayUsers = todayEvents.filter((e) => e.eventType === "user.registered").length;
+    const todayOrders = todayRealEvents.filter((e) => e.eventType === "order.placed").length;
+    const todayUsers  = todayRealEvents.filter((e) => e.eventType === "user.registered").length;
 
     // Revenue by hour (today)
     const revenueByHour: Record<number, number> = {};
     for (let h = 0; h < 24; h++) revenueByHour[h] = 0;
-    todayEvents.filter((e) => e.eventType === "order.paid").forEach((e) => {
+    todayRealEvents.filter((e) => e.eventType === "order.paid").forEach((e) => {
       const hour = new Date(e._creationTime).getHours();
       revenueByHour[hour] = (revenueByHour[hour] ?? 0) + (e.revenue ?? 0);
     });
 
     // Revenue by city
     const byCityMap: Record<string, number> = {};
-    todayEvents.filter((e) => e.eventType === "order.paid" && e.city).forEach((e) => {
+    todayRealEvents.filter((e) => e.eventType === "order.paid" && e.city).forEach((e) => {
       byCityMap[e.city!] = (byCityMap[e.city!] ?? 0) + (e.revenue ?? 0);
     });
     const revenueByCity = Object.entries(byCityMap)
@@ -193,19 +204,34 @@ export const getDashboardStats = query({
     const funnelTypes = ["product.viewed", "cart.item_added", "checkout.started", "order.placed", "order.paid"];
     const funnel = funnelTypes.map((type) => ({
       event_type: type,
-      users: new Set(todayEvents.filter((e) => e.eventType === type).map((e) => e.sessionId || e.userId)).size,
+      users: new Set(
+        todayRealEvents.filter((e) => e.eventType === type).map((e) => e.sessionId ?? String(e.userId))
+      ).size,
     }));
 
-    // Bot stats
-    const botEvents = allEvents.filter((e) => e.isBotGenerated);
-    const botPersonas = [...new Set(botEvents.map((e) => e.botPersona).filter(Boolean))];
+    // ── Bot stats – query per persona type, capped at 200 events per type
+    const botEventTypes = ["bot.session_start", "order.placed", "cart.abandoned", "order.paid"];
+    const botRawEvents: typeof todayRealEvents = [];
+    for (const type of botEventTypes) {
+      const events = await ctx.db
+        .query("analyticsEvents")
+        .withIndex("by_bot_and_type", (q) => q.eq("isBotGenerated", true).eq("eventType", type))
+        .take(200);
+      botRawEvents.push(...events);
+    }
+
+    const botPersonas = [...new Set(botRawEvents.map((e) => e.botPersona).filter(Boolean))] as string[];
     const botStats = botPersonas.map((persona) => {
-      const personaEvents = botEvents.filter((e) => e.botPersona === persona);
-      const sessions = personaEvents.filter((e) => e.eventType === "bot.session_start").length;
-      const purchases = personaEvents.filter((e) => e.eventType === "order.placed").length;
-      const abandonments = personaEvents.filter((e) => e.eventType === "cart.abandoned").length;
-      const revenue = personaEvents.filter((e) => e.eventType === "order.paid").reduce((s, e) => s + (e.revenue ?? 0), 0);
-      return { bot_persona: persona, sessions, purchases, abandonments, revenue, conversion_rate: sessions > 0 ? (purchases / sessions * 100).toFixed(1) : "0" };
+      const pe = botRawEvents.filter((e) => e.botPersona === persona);
+      const sessions     = pe.filter((e) => e.eventType === "bot.session_start").length;
+      const purchases    = pe.filter((e) => e.eventType === "order.placed").length;
+      const abandonments = pe.filter((e) => e.eventType === "cart.abandoned").length;
+      const revenue      = pe.filter((e) => e.eventType === "order.paid").reduce((s, e) => s + (e.revenue ?? 0), 0);
+      return {
+        bot_persona: persona,
+        sessions, purchases, abandonments, revenue,
+        conversion_rate: sessions > 0 ? (purchases / sessions * 100).toFixed(1) : "0",
+      };
     });
 
     return {
