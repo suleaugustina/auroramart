@@ -53,7 +53,7 @@ const STAGGER_MS     = parseInt(process.env.STAGGER_MS ?? '300'); // ms between 
 const API_BASE       = process.env.API_URL ?? CONVEX_URL;
 const DAEMON         = process.env.DAEMON === 'true';
 
-const client = new ConvexHttpClient(CONVEX_URL);
+const client = new ConvexHttpClient(CONVEX_URL, { skipConvexDeploymentUrlCheck: true });
 
 // ── Types ─────────────────────────────────────────────────────
 type Persona =

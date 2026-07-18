@@ -88,7 +88,7 @@ const DELAY_MS = parseInt(process.env.DELAY_MS ?? '800');
 const STAGGER_MS = parseInt(process.env.STAGGER_MS ?? '300'); // ms between bot starts within a batch
 const API_BASE = process.env.API_URL ?? CONVEX_URL;
 const DAEMON = process.env.DAEMON === 'true';
-const client = new browser_1.ConvexHttpClient(CONVEX_URL);
+const client = new browser_1.ConvexHttpClient(CONVEX_URL, { skipConvexDeploymentUrlCheck: true });
 // ── Persona Profiles ──────────────────────────────────────────
 const PERSONAS = {
     impulse_buyer: { purchaseProb: 0.78, avgProductsViewed: 3, preferredCategories: ['fashion-clothing', 'electronics-gadgets'], priceRange: [2000, 80000], avgQty: [1, 2], description: 'Buys quickly, minimal research' },
