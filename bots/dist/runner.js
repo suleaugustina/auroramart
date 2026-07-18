@@ -79,13 +79,14 @@ for (const envPath of envPaths) {
         break; // stop at first found file
 }
 // ── Config ────────────────────────────────────────────────────
-const CONVEX_URL = process.env.CONVEX_URL ?? 'http://localhost:3000';
+const rawConvexUrl = process.env.CONVEX_URL ?? 'http://localhost:3000';
+const CONVEX_URL = rawConvexUrl.endsWith('/') ? rawConvexUrl.slice(0, -1) : rawConvexUrl;
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://localhost:5001';
 const TOTAL_BOTS = parseInt(process.env.TOTAL ?? '100');
 const CONCURRENT = parseInt(process.env.CONCURRENT ?? '5'); // keep low to avoid Convex OCC conflicts
 const DELAY_MS = parseInt(process.env.DELAY_MS ?? '800');
 const STAGGER_MS = parseInt(process.env.STAGGER_MS ?? '300'); // ms between bot starts within a batch
-const API_BASE = process.env.API_URL ?? process.env.CONVEX_URL ?? 'http://localhost:3000';
+const API_BASE = process.env.API_URL ?? CONVEX_URL;
 const DAEMON = process.env.DAEMON === 'true';
 const client = new browser_1.ConvexHttpClient(CONVEX_URL);
 // ── Persona Profiles ──────────────────────────────────────────
