@@ -251,7 +251,8 @@ export default defineSchema({
     .index("by_type", ["eventType"])
     .index("by_user", ["userId"])
     .index("by_bot", ["isBotGenerated"])
-    .index("by_session", ["sessionId"]),
+    .index("by_session", ["sessionId"])
+    .index("by_bot_and_type", ["isBotGenerated", "eventType"]),
 
   // ── Inventory Alerts ─────────────────────────────────────
   inventoryAlerts: defineTable({
