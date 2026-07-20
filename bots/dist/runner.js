@@ -86,12 +86,19 @@ const CONVEX_URL = rawConvexUrl
     .replace(/\/$/, '') // remove trailing slash
     .replace(/\.convex\.site$/, '.convex.cloud'); // fix common Railway env var mistake
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://localhost:5001';
-const TOTAL_BOTS = parseInt(process.env.TOTAL ?? '100');
-const CONCURRENT = parseInt(process.env.CONCURRENT ?? '5'); // keep low to avoid Convex OCC conflicts
-const DELAY_MS = parseInt(process.env.DELAY_MS ?? '800');
-const STAGGER_MS = parseInt(process.env.STAGGER_MS ?? '300'); // ms between bot starts within a batch
+// ── Resource budget (Convex free tier: ~1M calls/month) ──────────
+// Each bot session ≈ 45 Convex calls. Budget targets:
+//   20 bots × 45 calls = 900/batch × 12 batches/day = 10,800/day × 30d = 324,000/month ✓
+// DO NOT raise TOTAL above 30 or lower daemon sleep below 60 min.
+const TOTAL_BOTS = parseInt(process.env.TOTAL ?? '20'); // ⬇ reduced from 100
+const CONCURRENT = parseInt(process.env.CONCURRENT ?? '3'); // ⬇ reduced from 5
+const DELAY_MS = parseInt(process.env.DELAY_MS ?? '1500'); // ⬆ slower actions = fewer OCC conflicts
+const STAGGER_MS = parseInt(process.env.STAGGER_MS ?? '500'); // ms between bot starts within a batch
 const API_BASE = process.env.API_URL ?? CONVEX_URL;
 const DAEMON = process.env.DAEMON === 'true';
+// Daemon sleep range — must stay ≥ 60 min to stay within monthly budget
+const DAEMON_SLEEP_MIN = parseInt(process.env.DAEMON_SLEEP_MIN ?? '60'); // minutes
+const DAEMON_SLEEP_MAX = parseInt(process.env.DAEMON_SLEEP_MAX ?? '120'); // minutes
 const client = new browser_1.ConvexHttpClient(CONVEX_URL, { skipConvexDeploymentUrlCheck: true });
 // ── Persona Profiles ──────────────────────────────────────────
 const PERSONAS = {
@@ -424,9 +431,11 @@ async function run() {
         });
         console.log(`╚═══════════════════════════════════════════╝`);
         if (DAEMON) {
-            // Sleep for a random interval (between 5 and 15 minutes) before running the next simulation batch
-            const waitMinutes = rand(5, 15);
-            console.log(`\n[Daemon Mode] Sleeping for ${waitMinutes} minutes before starting the next simulation batch...`);
+            // Sleep 60–120 min between batches to stay within Convex free-tier budget (~1M calls/month).
+            // Each batch of 20 bots uses ~900 calls; 12 batches/day × 900 = ~10,800/day = ~324k/month.
+            const waitMinutes = rand(DAEMON_SLEEP_MIN, DAEMON_SLEEP_MAX);
+            const nextRun = new Date(Date.now() + waitMinutes * 60 * 1000).toLocaleTimeString();
+            console.log(`\n[Daemon Mode] Budget-safe sleep: ${waitMinutes} min. Next batch at ${nextRun}`);
             await sleep(waitMinutes * 60 * 1000);
         }
     } while (DAEMON);

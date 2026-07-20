@@ -161,8 +161,9 @@ export const getDashboardStats = query({
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayMs = todayStart.getTime();
 
-    // ── Real user events (today only) – use indexed queries per event type
+    // ── All events (today only) – use indexed queries per event type
     // to avoid a full-table .collect() that can exceed Convex's 4MB read cap.
+    // Querying by type includes both bot and real events so the dashboard is fully populated.
     const realEventTypes = ["order.paid", "order.placed", "user.registered", "product.viewed", "cart.item_added", "checkout.started"];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const todayRealEvents: any[] = [];
@@ -170,7 +171,7 @@ export const getDashboardStats = query({
     for (const type of realEventTypes) {
       const events = await ctx.db
         .query("analyticsEvents")
-        .withIndex("by_bot_and_type", (q) => q.eq("isBotGenerated", false).eq("eventType", type))
+        .withIndex("by_type", (q) => q.eq("eventType", type))
         .filter((q) => q.gte(q.field("_creationTime"), todayMs))
         .take(500);
       todayRealEvents.push(...events);
